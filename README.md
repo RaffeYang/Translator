@@ -10,6 +10,9 @@
 
 English: Immersive bilingual translator userscript (original above, translation below). Fast Google Translate backend, viewport-aware batching, AdGuard-compatible, and a polished UI with hotkeys and auto-translate rules.
 
+-[Bilingual Translation Dark Theme](./images/Bilingual Translation Dark Theme.png)
+-[Bilingual Translation Light Theme](./images/Bilingual Translation Light Theme.png)
+
 ## Features
 
 -  Translation
