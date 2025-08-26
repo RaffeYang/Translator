@@ -187,17 +187,115 @@
 
   class ThemeManager {
     constructor() { this.theme = Storage.get(CONFIG.storage.theme, 'system'); this.apply(); this.watch(); }
-    current() { return this.theme === 'system' ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light') : this.theme; }
-    apply() { document.documentElement.setAttribute('data-theme', this.current()); }
+    
+    // Detect the actual theme of the webpage by analyzing background colors
+    detectPageTheme() {
+      try {
+        // Check common elements for background color
+        const elementsToCheck = [
+          document.body,
+          document.documentElement,
+          document.querySelector('main'),
+          document.querySelector('[role="main"]'),
+          document.querySelector('.content'),
+          document.querySelector('article')
+        ].filter(Boolean);
+        
+        for (const el of elementsToCheck) {
+          const style = getComputedStyle(el);
+          const bgColor = style.backgroundColor;
+          
+          // Skip transparent backgrounds
+          if (bgColor === 'transparent' || bgColor === 'rgba(0, 0, 0, 0)') continue;
+          
+          // Parse RGB values
+          const rgbMatch = bgColor.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*[\d.]+)?\)/);
+          if (rgbMatch) {
+            const [, r, g, b] = rgbMatch.map(Number);
+            
+            // Calculate luminance to determine if it's dark or light
+            // Using relative luminance formula: 0.299*R + 0.587*G + 0.114*B
+            const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+            
+            // If luminance > 0.5, it's light; otherwise dark
+            return luminance > 0.5 ? 'light' : 'dark';
+          }
+        }
+        
+        // Fallback: check if page has dark mode indicators
+        const darkModeIndicators = [
+          'data-theme="dark"',
+          'class*="dark"',
+          'data-bs-theme="dark"',
+          '[data-color-mode="dark"]'
+        ];
+        
+        for (const indicator of darkModeIndicators) {
+          if (document.querySelector(`[${indicator.split('=')[0]}*="${indicator.split('=')[1].replace(/"/g, '')}"]`)) {
+            return 'dark';
+          }
+        }
+        
+        // Final fallback to system preference
+        return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      } catch (e) {
+        log('Theme detection failed, using system preference', e);
+        return matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+    }
+    
+    current() { 
+      if (this.theme === 'system') {
+        return this.detectPageTheme();
+      }
+      return this.theme;
+    }
+    
+    apply() { 
+      const detectedTheme = this.current();
+      document.documentElement.setAttribute('data-theme', detectedTheme); 
+      log('Applied theme:', detectedTheme);
+    }
+    
     set(t) { this.theme = t; Storage.set(CONFIG.storage.theme, t); this.apply(); }
-    watch() { matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (this.theme === 'system') this.apply(); }); }
+    watch() { 
+      matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { 
+        if (this.theme === 'system') this.apply(); 
+      }); 
+      
+      // Re-detect theme when page changes (for SPAs)
+      let lastUrl = location.href;
+      const observer = new MutationObserver(() => {
+        if (location.href !== lastUrl) {
+          lastUrl = location.href;
+          setTimeout(() => this.apply(), 500); // Allow page to render
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+    }
   }
   const themeManager = new ThemeManager();
 
   class AutoTranslationManager {
-    constructor() { this.autoSites = Storage.get(CONFIG.storage.autoSites, 'youtube.com,github.com,x.com,twitter.com,reddit.com'); this.domain = location.hostname; this.shouldAuto = this.check(); }
+    constructor() { this.autoSites = Storage.get(CONFIG.storage.autoSites, ''); this.domain = location.hostname; this.shouldAuto = this.check(); }
     check() { const sites = this.autoSites.split(',').map(s => s.trim()).filter(Boolean); return sites.some(site => matchDomain(this.domain, site)); }
-    setSites(s) { this.autoSites = s; Storage.set(CONFIG.storage.autoSites, s); this.shouldAuto = this.check(); }
+    setSites(s) { 
+      const oldShouldAuto = this.shouldAuto;
+      this.autoSites = s; 
+      Storage.set(CONFIG.storage.autoSites, s); 
+      this.shouldAuto = this.check();
+      
+      // Update ContentProcessor dynamic monitoring based on new shouldAuto state
+      if (oldShouldAuto !== this.shouldAuto) {
+        if (this.shouldAuto && !processor.hasDynamicMonitoring) {
+          processor.setupDynamic();
+          processor.hasDynamicMonitoring = true;
+        } else if (!this.shouldAuto && processor.hasDynamicMonitoring) {
+          processor.teardownDynamic();
+          processor.hasDynamicMonitoring = false;
+        }
+      }
+    }
     getSites() { return this.autoSites; }
   }
   const autoMgr = new AutoTranslationManager();
@@ -213,10 +311,21 @@
   function isProcessed(el) { return el.hasAttribute('data-st-processed') || el.querySelector('.translation-wrapper'); }
 
   class ContentProcessor {
-    constructor() { this.viewport = new ViewportObserver(els => this.translateVisible(els)); this.processed = new Set(); this.setupDynamic(); }
+    constructor() { 
+      this.viewport = new ViewportObserver(els => this.translateVisible(els)); 
+      this.processed = new Set(); 
+      this.hasDynamicMonitoring = false;
+      this.mutationObserver = null;
+      this.scrollHandler = null;
+      if (autoMgr.shouldAuto) {
+        this.setupDynamic(); 
+      }
+    }
     setupDynamic() {
+      if (this.hasDynamicMonitoring) return; // Avoid duplicate setup
+      
       let timer = null;
-      const mo = new MutationObserver((muts) => {
+      this.mutationObserver = new MutationObserver((muts) => {
         clearTimeout(timer);
         timer = setTimeout(() => {
           const added = [];
@@ -228,9 +337,32 @@
           }
         }, 100);
       });
-      mo.observe(document.body, { childList: true, subtree: true });
+      this.mutationObserver.observe(document.body, { childList: true, subtree: true });
+      
       let scrollTimer = null;
-      addEventListener('scroll', () => { clearTimeout(scrollTimer); scrollTimer = setTimeout(() => { const vis = this.visibleUntranslated(); if (vis.length) this.translateVisible(vis); }, 160); }, { passive: true });
+      this.scrollHandler = () => { 
+        clearTimeout(scrollTimer); 
+        scrollTimer = setTimeout(() => { 
+          const vis = this.visibleUntranslated(); 
+          if (vis.length) this.translateVisible(vis); 
+        }, 160); 
+      };
+      addEventListener('scroll', this.scrollHandler, { passive: true });
+      this.hasDynamicMonitoring = true;
+    }
+    
+    teardownDynamic() {
+      if (!this.hasDynamicMonitoring) return;
+      
+      if (this.mutationObserver) {
+        this.mutationObserver.disconnect();
+        this.mutationObserver = null;
+      }
+      if (this.scrollHandler) {
+        removeEventListener('scroll', this.scrollHandler);
+        this.scrollHandler = null;
+      }
+      this.hasDynamicMonitoring = false;
     }
     selectorsByDomain() {
       const d = location.hostname;
@@ -336,6 +468,9 @@
       if (isProcessed(el)) return;
       if (originalText === translatedText) return;
 
+      // Ensure theme is up to date before applying translation
+      themeManager.apply();
+
       // Create a visible translation wrapper and hide original children
       const wrapper = document.createElement('div');
       wrapper.className = 'translation-wrapper';
@@ -375,7 +510,11 @@
       this.processed.clear();
       this.viewport.disconnect();
       this.viewport = new ViewportObserver(els => this.translateVisible(els));
-      this.setupDynamic();
+      // Reset dynamic monitoring based on current auto-translation setting
+      this.teardownDynamic();
+      if (autoMgr.shouldAuto) {
+        this.setupDynamic();
+      }
     }
   }
   const processor = new ContentProcessor();
@@ -506,7 +645,20 @@ textarea{resize:vertical;min-height:60px}
 .st-original-host{visibility:hidden;height:0;overflow:hidden}
 .original-text{color:#6b7280;font-style:italic;font-size:.9em;line-height:1.45;margin-bottom:4px;opacity:var(--st-original-opacity)}
 [data-theme="dark"] .original-text{color:rgba(229,231,235,0.92);text-shadow:0 0 1px rgba(0,0,0,0.6)}
-.translated-text{color:var(--st-text);font-weight:500;line-height:1.55;font-size:1em}
+.translated-text{color:currentColor;font-weight:500;line-height:1.55;font-size:1em;filter:contrast(1.1)}
+[data-theme="dark"] .translated-text{color:#f3f4f6;text-shadow:0 1px 2px rgba(0,0,0,0.4)}
+
+/* Better adaptation to page theme */
+.translation-wrapper {
+  /* Inherit text color from parent context */
+}
+[data-theme="light"] .translated-text{
+  color: #1f2937;
+}
+[data-theme="dark"] .translated-text{
+  color: #f3f4f6;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+}
 /* YouTube subtitles two-line layout */
 .ytp-caption-segment .subtitle-original,.ytp-caption-segment .subtitle-translation{display:block !important}
 .subtitle-original{color:rgba(255,255,255,.92);font-size:1em;margin-bottom:2px;line-height:1.25;text-shadow:1px 1px 2px rgba(0,0,0,.85)}
@@ -579,7 +731,7 @@ textarea{resize:vertical;min-height:60px}
     showIconToggle.checked = Storage.get(CONFIG.storage.showIcon, true);
 
     const themeOptions = [
-      { code: 'system', name: 'Follow System', flag: '🌓' },
+      { code: 'system', name: 'Auto (Smart)', flag: '🌓' },
       { code: 'light', name: 'Light Mode', flag: '☀️' },
       { code: 'dark', name: 'Dark Mode', flag: '🌙' }
     ];
@@ -674,7 +826,16 @@ textarea{resize:vertical;min-height:60px}
 
   function showStatus(msg) { const el = document.querySelector('#statusText'); if (el) el.textContent = msg; else log('Status:', msg); }
 
-  function init() { injectStyles(); const ui = createUI(); setupUIEvents(ui); }
+  function init() { 
+    injectStyles(); 
+    const ui = createUI(); 
+    setupUIEvents(ui); 
+    
+    // Re-apply theme after page is fully loaded to ensure accurate detection
+    setTimeout(() => {
+      themeManager.apply();
+    }, 1000);
+  }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else setTimeout(init, 100);
 })();
