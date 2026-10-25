@@ -1,73 +1,73 @@
 # Immersive Bilingual
 
-AdGuard 用户脚本。默认开启 universal，自动识别网站正文，在原文下方显示简体中文译文。当前版本 **4.0.1**。
+An AdGuard userscript that automatically detects a page’s main content and displays Simplified Chinese translations below the original text. Universal mode is enabled by default. Current version: **4.0.1**.
 
-## 使用
+## Usage
 
-1. 在 AdGuard 的 Extensions 中选择 **Install from File or URL**。
-2. 选择本项目的 `immersive-bilingual-adguard.user.js`，安装；同名脚本选择 Continue 替换。
-3. 刷新网页。`Alt + T` 开启/暂停翻译；输入框内不响应此快捷键。
+1. In AdGuard’s Extensions section, select **Install from File or URL**.
+2. Select this project’s `immersive-bilingual-adguard.user.js` to install it. If a script with the same name is already installed, select Continue to replace it.
+3. Refresh the page. Press `Alt + T` to enable or pause translation; the shortcut is ignored while typing in an input field.
 
-只有脚本文件需要安装。Node、npm 和测试文件仅用于开发。更新本地文件后，需要重新导入 AdGuard；控制台启动日志包含版本及 universal 状态。
+Only the userscript file needs to be installed. Node, npm, and the test files are for development only. After updating the local file, import it into AdGuard again. The startup log in the console includes the version and universal mode status.
 
-## 正文范围
+## Content Scope
 
-- 通用识别：文章、博客、新闻、教程和技术文档。结合 article、articleBody、markdown/prose 等容器以及连续长段落识别正文；支持无 article 标签的普通段落页面。
-- 翻译标题、段落、说明列表、引用、图片说明和表格文字；每个正文块只翻译一次。
-- 排除导航、侧栏、目录、页脚、评论、推荐、分享、订阅、表单、代码和隐藏内容。保留正文中的链接及行内代码。
-- 正文证据不足时跳过，优先减少误翻译。不能保证所有网站都准确；首页卡片、极短文章、Canvas、封闭 Shadow DOM 和 iframe 内容不保证支持。
+- Universal detection covers articles, blogs, news, tutorials, and technical documentation. It identifies main content using containers such as article, articleBody, and markdown/prose, along with consecutive long paragraphs. Plain paragraph pages without an article element are also supported.
+- Translates headings, paragraphs, description lists, blockquotes, image captions, and table text. Each content block is translated only once.
+- Excludes navigation, sidebars, tables of contents, footers, comments, recommendations, sharing controls, subscriptions, forms, code blocks, and hidden content. Links and inline code within the main content are preserved.
+- Skips content when there is insufficient evidence that it belongs to the main body, prioritizing fewer false positives. Accuracy is not guaranteed on every website. Homepage cards, very short articles, Canvas, closed Shadow DOM, and iframe content are not guaranteed to be supported.
 
-以下站点的专用规则始终优先，开启 universal 不会扩大它们的范围：
+Dedicated rules for the following sites always take priority. Enabling universal mode does not expand their scope:
 
-| 站点 | 范围 |
+| Site | Scope |
 | --- | --- |
-| X / Twitter | 推文正文 |
-| GitHub | 仓库 README、About Description |
-| Reddit（含 old） | 帖子标题和正文，不含评论 |
-| GitHub Blog | 文章标题和正文 |
+| X / Twitter | Tweet text |
+| GitHub | Repository README and About description |
+| Reddit (including old Reddit) | Post titles and bodies, excluding comments |
+| GitHub Blog | Article titles and bodies |
 
-## 配置
+## Configuration
 
-编辑脚本顶部 `CONFIG`：
+Edit `CONFIG` at the top of the script:
 
-| 配置 | 默认值 / 含义 |
+| Setting | Default / Description |
 | --- | --- |
-| `enabled` | `true`；快捷键状态会持久保存并覆盖此默认值 |
-| `universal` | `true`；改为 `false` 后仅启用专用站点 |
-| `mode` | `bilingual`；也可设 `translation-only` |
+| `enabled` | `true`; the toggle state is persisted and overrides this default |
+| `universal` | `true`; set to `false` to enable only sites with dedicated rules |
+| `mode` | `bilingual`; can also be set to `translation-only` |
 | `sourceLang` / `targetLang` | `en` / `zh-CN` |
-| `skipIfDetectedLangs` | 跳过简体中文与中英混合段落 |
-| `blockedUrlPatterns` | URL 子串黑名单，命中时不翻译 |
-| `provider` | `google`；支持 deepseek、kimi、minimax |
-| `fallbackGoogle` | AI 服务失败时回退 Google |
-| `providers` | API Key、model、baseUrl；默认 Google 不需要密钥 |
-| `maxCandidatesPerScan` | `48`；长文章自动分批继续 |
-| `concurrency` | `3`；请求并发数，限制在 1–6 |
-| `retryDelayMs` | `30000`；失败节点的重试间隔 |
-| `siteRules` | 域名级 roots、selectors、排除和渲染选项 |
+| `skipIfDetectedLangs` | Skips Simplified Chinese paragraphs and paragraphs mixing Chinese and English |
+| `blockedUrlPatterns` | URL substring blocklist; matching pages are not translated |
+| `provider` | `google`; also supports deepseek, kimi, and minimax |
+| `fallbackGoogle` | Falls back to Google if the AI service fails |
+| `providers` | API key, model, and baseUrl; the default Google provider requires no key |
+| `maxCandidatesPerScan` | `48`; long articles are processed automatically in successive batches |
+| `concurrency` | `3`; number of concurrent requests, limited to 1–6 |
+| `retryDelayMs` | `30000`; retry interval for failed nodes |
+| `siteRules` | Domain-level roots, selectors, exclusions, and rendering options |
 
-默认使用 Google 公共翻译端点，待翻译正文会发送给配置的翻译服务。需要排除的网站可加入 `blockedUrlPatterns`。
+The script uses Google’s public translation endpoint by default. Text selected for translation is sent to the configured translation service. Add sites to `blockedUrlPatterns` to exclude them.
 
-## 实现与维护
+## Implementation and Maintenance
 
-单文件交付，避免安装时依赖额外库。代码依次组织为配置、站点路由、正文识别、翻译服务、队列、渲染、页面生命周期。
+Delivered as a single file to avoid additional library dependencies during installation. The code is organized into configuration, site routing, content detection, translation services, queue management, rendering, and page lifecycle handling.
 
-- 已有 v3 缓存和开关状态兼容保留。
-- 相同文本共用进行中的请求；扫描队列按节点去重。
-- 暂停、跳转、节点移除或原文变化后，丢弃过期响应。
-- 每个译文记录对应原文节点，避免相邻段落串位；列表和表格保持有效结构。
-- 观察器忽略自身译文，扫描采用节流，避免繁忙页面持续推迟扫描。
-- 请求失败暂缓重试，错误提示限频。缓存最多保留约 3000 条。
+- Preserves compatibility with the existing v3 cache and toggle state.
+- Shares in-flight requests for identical text and deduplicates queued scans by node.
+- Discards stale responses after translation is paused, navigation occurs, a node is removed, or the original text changes.
+- Tracks the source node for each translation to prevent translations from appearing beside the wrong paragraph. Lists and tables retain valid structure.
+- Observers ignore the script’s own translations, and scans are throttled to prevent busy pages from continually postponing them.
+- Delays retries after request failures and rate-limits error messages. The cache holds up to approximately 3,000 entries.
 
-开发验证：
+Development checks:
 
 ```sh
 npm ci
 npm test
 ```
 
-测试包含语法、配置/路由、正文正反例、站点回归、异步响应时效、请求去重、列表表格结构、超过一批的完整启动及快捷键。jsdom 模拟布局尺寸和翻译响应，因此不能代替 Safari + AdGuard 实际验证。
+Tests cover syntax, configuration and routing, positive and negative content-detection cases, site regressions, asynchronous response freshness, request deduplication, list and table structure, complete startup processing across multiple batches, and keyboard shortcuts. jsdom simulates layout dimensions and translation responses, so these tests do not replace verification in Safari with AdGuard.
 
-## 权限
+## Permissions
 
-使用 `GM_getValue`、`GM_setValue`、`GM_addStyle`、`GM_xmlhttpRequest`、`window.onurlchange`。`@match *://*/*` 用于 universal；`@connect *` 用于自定义服务地址。PDF 页面及子框架不运行。
+Uses `GM_getValue`, `GM_setValue`, `GM_addStyle`, `GM_xmlhttpRequest`, and `window.onurlchange`. `@match *://*/*` supports universal mode; `@connect *` supports custom service URLs. The script does not run on PDF pages or in subframes.
