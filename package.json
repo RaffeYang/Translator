@@ -1,0 +1,10 @@
+{
+  "name": "immersive-bilingual-userscript",
+  "private": true,
+  "scripts": {
+    "test": "node --check immersive-bilingual-adguard.user.js && node scripts/validate-userscript.js && node --test scripts/test-dom.cjs"
+  },
+  "devDependencies": {
+    "jsdom": "29.1.1"
+  }
+}
